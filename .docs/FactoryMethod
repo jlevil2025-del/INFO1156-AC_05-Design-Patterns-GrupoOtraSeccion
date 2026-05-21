@@ -1,0 +1,22 @@
+##Factory Method
+
+### 1. Descripción del Problema
+En el desarrollo de la aplicación, surgió la necesidad de implementar un sistema de alertas y notificaciones internas. Diseñar este módulo acoplando directamente clases concretas (como clientes de Email o APIs de WhatsApp) dentro de los servicios principales genera un código rígido, difícil de testear de forma aislada y propenso a errores ante la futura adición de nuevos canales de comunicación (como SMS o notificaciones Push).
+
+### 2. Solución Aplicada (Factory Method)
+Para resolver este acoplamiento, se implementó el patrón de diseño creacional **Factory Method (Método Fábrica)** dentro del módulo independiente `notificaciones` (`src/notificaciones/`).
+
+Este patrón delega la responsabilidad de la instanciación de los objetos a una clase especializada (`NotificacionFactory`), encapsulando el uso del operador `new`. De este modo, el resto de la aplicación interactúa únicamente con una interfaz abstracta, sin necesidad de conocer los detalles de infraestructura de cada canal específico.
+
+### 3. Estructura y arquitectura del código
+
+* **`notificacion.interface.ts` (Producto):** Interfaz abstracta que define el contrato estructural común (`.enviar()`) para todas las estrategias de envío.
+* **`estrategias/` (Productos Concretos):** Las clases `EmailNotificacion` y `WhatsappNotificacion` contienen la implementación real y los detalles técnicos de cada canal.
+* **`notificacion.factory.ts` (Creador):** Contiene el método fábrica estático `crearCanal(tipo)`. Evalúa el parámetro en tiempo de ejecución y retorna la instancia concreta correspondiente de forma abstracta.
+* **`notificaciones.service.ts`:** Servicio modular de NestJS que invoca a la fábrica para resolver las alertas de negocio de manera limpia.
+
+### 4. Justificación y Beneficios
+
+* **Principio Abierto/Cerrado (OCP):** El diseño queda abierto a la extensión pero cerrado a la modificación. Si a futuro se requiere agregar otro servicio de mensajería, solo se debe crear su estrategia en su archivo correspondiente y añadir la condición en la fábrica, sin alterar los servicios de negocio existentes.
+* **Modularidad y Cero Conflictos en Git:** Al encapsular el desarrollo dentro de un módulo propio (`NotificacionesModule`) e importarlo mediante el sistema de alias de rutas del proyecto (`@/notificaciones/...`), se garantizó una integración limpia en el repositorio sin generar conflictos con las ramas de los demás desarrolladores del grupo.
+* **Facilidad para Testing:** Al depender de una interfaz común y no de clases duras, se facilita la creación de objetos simulados (*mocks*) para realizar pruebas unitarias sobre los flujos de la aplicación sin disparar envíos reales de infraestructura.
