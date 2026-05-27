@@ -1,17 +1,29 @@
 import { Module } from '@nestjs/common';
 import { PostsController } from './posts.controller';
 import { PostsService } from './posts.service';
-import { PostSubject } from './posts.observer'; // <-- Importamos el Sujeto
-import { LegacyModerationAdapter } from './moderation.adapter';
+import { PrismaModule } from '../prisma/prisma.module';
+// Asegúrate de importar todas las clases
+import {
+  PostSubject,
+  LogObserver,
+  NotificationObserver,
+  RecomputeObserver
+} from './posts.observer';
 import { PostFactory } from './posts.factory';
+import { LegacyModerationAdapter } from './moderation.adapter';
 
 @Module({
+  imports: [PrismaModule],
   controllers: [PostsController],
   providers: [
-    PostsService, 
-    PostSubject, // <-- Registramos el Sujeto como proveedor
-    PostFactory, // <-- Registramos el factory como proveedor
-    LegacyModerationAdapter // <-- Registramos el adaptador como proveedor
+    PostsService,
+    PostFactory,
+    LegacyModerationAdapter,
+    // El Sujeto y todos sus Observadores deben estar registrados aquí
+    PostSubject,
+    LogObserver,
+    NotificationObserver,
+    RecomputeObserver
   ],
 })
-export class PostsModule {}                                                                                                                                                     
+export class PostsModule {}

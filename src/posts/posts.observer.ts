@@ -1,51 +1,63 @@
 import { Injectable } from '@nestjs/common';
 
-// 1. La interfaz que define qué es un Observador
-export interface InteractionObserver {
-  update(payload: { type: string; postId: number; interactionId: number; reactionType?: string }): void;
+// 1. Contrato estricto
+export interface InteractionPayload {
+  type: string;
+  postId: number;
+  interactionId: number;
+  reactionType?: string;
 }
 
-// 2. Implementación concreta: El observador encargado de los Logs e Historial
+export interface InteractionObserver {
+  update(payload: InteractionPayload): void;
+}
+
+// 2. Observadores Inyectables y fuertemente tipados
+@Injectable()
 export class LogObserver implements InteractionObserver {
-  update(payload: any): void {
-    console.log(`[event:${payload.type}.created]`, { 
-      postId: payload.postId, 
-      id: payload.interactionId 
+  update(payload: InteractionPayload): void {
+    console.log(`[event:${payload.type}.created]`, {
+      postId: payload.postId,
+      id: payload.interactionId
     });
   }
 }
 
-// 3. Implementación concreta: El observador encargado de las Notificaciones
+@Injectable()
 export class NotificationObserver implements InteractionObserver {
-  update(payload: any): void {
+  update(payload: InteractionPayload): void {
     console.log(`[notify:${payload.type}]`, { postId: payload.postId });
   }
 }
 
-// 4. Implementación concreta: El observador encargado de los Recálculos de puntuación
+@Injectable()
 export class RecomputeObserver implements InteractionObserver {
-  update(payload: any): void {
+  update(payload: InteractionPayload): void {
     console.log(`[recompute] postId=${payload.postId}`);
   }
 }
 
-// 5. El Sujeto (Subject): La clase principal que NestJS inyectará para gestionar todo
+// 3. El Sujeto usando Inyección de Dependencias
 @Injectable()
 export class PostSubject {
   private observers: InteractionObserver[] = [];
 
-  constructor() {
-    // Registramos los observadores nativos al inicializar
-    this.attach(new LogObserver());
-    this.attach(new NotificationObserver());
-    this.attach(new RecomputeObserver());
+  // NestJS inyecta las dependencias, el Sujeto ya no usa 'new'
+  constructor(
+    private readonly logObserver: LogObserver,
+    private readonly notificationObserver: NotificationObserver,
+    private readonly recomputeObserver: RecomputeObserver,
+  ) {
+    this.attach(this.logObserver);
+    this.attach(this.notificationObserver);
+    this.attach(this.recomputeObserver);
   }
 
   attach(observer: InteractionObserver): void {
     this.observers.push(observer);
   }
 
-  notify(payload: { type: string; postId: number; interactionId: number; reactionType?: string }): void {
+  notify(payload: InteractionPayload): void {
     for (const observer of this.observers) {
       observer.update(payload);
     }
