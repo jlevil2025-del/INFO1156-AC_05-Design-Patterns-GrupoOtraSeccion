@@ -30,7 +30,30 @@ Para mitigar estos problemas, se implementaron soluciones puras en TypeScript ap
 - **Ubicación:** `src/posts/posts.factory.ts`
 - **Solución:** Se delegó la instanciación compleja de `PostEntity` a la clase `PostFactory`. Toda la lógica de extracción de tags, cálculo de `relevanceScore` y mapeo de metadatos del _feed_ fue removida del controlador y centralizada en esta fábrica.
 - **Impacto:** Cumple con SRP al aislar las reglas de construcción de entidades de presentación.
+### Diagrama de Clases
+Este diagrama muestra la estructura estática del módulo, ilustrando cómo el cliente (`NotificacionesService`) depende de la abstracción (`Notificacion`) y de la fábrica (`NotificacionFactory`), manteniéndose desacoplado de las implementaciones concretas.
+<img width="1041" height="622" alt="DDclases" src="https://github.com/user-attachments/assets/fd7303de-a25c-4745-98d8-946c0952a0a6" />
 
+### 🔄 Diagrama de Secuencia
+
+Este diagrama describe el flujo dinámico cuando se solicita el envío de una alerta, demostrando cómo la fábrica intercepta la creación del objeto en tiempo de ejecución.
+<img width="1320" height="550" alt="DDsecuencia" src="https://github.com/user-attachments/assets/6e2efa78-0e85-4330-8f3e-dbb09ad61a54" />
+
+
+### Descripción de Componentes e Infraestructura
+El patrón se divide en cuatro componentes clave ubicados en la ruta `src/notificaciones/`:
+
+- **El Producto (`interfaces/notificacion.interface.ts`):** Define la interfaz `Notificacion` con el método abstracto `enviar`. Actúa como el contrato unificado del sistema.
+- **Los Productos Concretos (`estrategias/`):** Clases `EmailNotificacion` y `WhatsappNotificacion`. Implementan de manera independiente la infraestructura técnica requerida para procesar y despachar los mensajes según su naturaleza.
+- **El Creador (`notificacion.factory.ts`):** Clase `NotificacionFactory` que expone el método fábrica estático `crearCanal`. Centraliza las sentencias condicionales de instanciación evaluando el parámetro recibido en tiempo de ejecución.
+- **El Servicio Cliente (`notificaciones.service.ts`):** Componente inyectable que encapsula la interacción con la fábrica y ejecuta los métodos del contrato abstracto, sirviendo como pasarela limpia para el resto de los módulos del servidor.
+
+### Justificación de Diseño y Arquitectura
+
+- **Desacoplamiento mediante Inversión de Dependencias:** El cliente (`NotificacionesService`) ya no depende de constructores directos (`new EmailNotificacion()`). Al depender exclusivamente de la interfaz abstracta, se reduce drásticamente el acoplamiento entre los componentes del sistema.
+- **Extensibilidad bajo el Principio Abierto/Cerrado (OCP):** El código base está protegido contra modificaciones críticas. Si las necesidades del negocio exigen incorporar nuevos canales (como mensajería SMS, Telegram o notificaciones Push), solo se requiere codificar la nueva estrategia y registrarla en el switch de la fábrica. Toda la lógica de negocio consumidora permanecerá intacta.
+- **Aislamiento de Responsabilidades (SRP):** La lógica asociada a discernir *cómo* y *cuándo* se inicializa un canal específico fue removida de las capas de servicio y encapsulada estrictamente en la fábrica creacional.
+- **Modularidad para Integración en Repositorio:** El desarrollo se estructuró de forma encapsulada en su propio módulo (`NotificacionesModule`), permitiendo una integración limpia a través del árbol de directorios global y el mapeo de alias de rutas, minimizando la probabilidad de generar conflictos en el control de versiones al trabajar en paralelo con otros miembros del equipo.
 ### B. Patrón Estructural: Adapter (Adaptador)
 
 - **Ubicación:** `src/posts/moderation.adapter.ts`
