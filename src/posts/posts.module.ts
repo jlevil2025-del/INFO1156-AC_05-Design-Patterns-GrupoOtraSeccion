@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { PostsController } from './posts.controller';
 import { PostsService } from './posts.service';
 import { PrismaModule } from '../prisma/prisma.module';
-// Asegúrate de importar todas las clases
 import {
   PostSubject,
   LogObserver,
@@ -11,19 +10,21 @@ import {
 } from './posts.observer';
 import { PostFactory } from './posts.factory';
 import { LegacyModerationAdapter } from './moderation.adapter';
+import { NotificacionesObserverAdapter } from './notificaciones-observer.adapter';
+import { NotificacionesModule } from '../notificaciones/notificaciones.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, NotificacionesModule],
   controllers: [PostsController],
   providers: [
     PostsService,
     PostFactory,
     LegacyModerationAdapter,
-    // El Sujeto y todos sus Observadores deben estar registrados aquí
     PostSubject,
     LogObserver,
     NotificationObserver,
-    RecomputeObserver
+    RecomputeObserver,
+    NotificacionesObserverAdapter,
   ],
 })
 export class PostsModule {}
