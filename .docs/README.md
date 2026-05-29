@@ -6,7 +6,7 @@
 - **Integrantes:**
     - Bárbara Arriagada
     - Jaime Levil
-    - Leonel Chaves
+    - Leonardo Chavez
     - Alan Bernales
 
 ---
@@ -56,9 +56,157 @@ El patrón se divide en cuatro componentes clave ubicados en la ruta `src/notifi
 - **Modularidad para Integración en Repositorio:** El desarrollo se estructuró de forma encapsulada en su propio módulo (`NotificacionesModule`), permitiendo una integración limpia a través del árbol de directorios global y el mapeo de alias de rutas, minimizando la probabilidad de generar conflictos en el control de versiones al trabajar en paralelo con otros miembros del equipo.
 ### B. Patrón Estructural: Adapter (Adaptador)
 
-- **Ubicación:** `src/posts/moderation.adapter.ts`
-- **Solución:** Se creó la interfaz `ModernModerator` y su implementación concreta `LegacyModerationAdapter`. Este adaptador encapsula las respuestas impredecibles del cliente antiguo y expone un único método semántico y tipado: `isBlocked(content: string): boolean`.
-- **Impacto:** Protege al controlador de cambios en dependencias externas e inestables, reduciendo la complejidad ciclomática del endpoint a una única línea limpia.
+Se identificaron **dos brechas de incompatibilidad de interfaces** en la arquitectura del servidor, ambas resueltas mediante el patrón Adapter.
+
+---
+
+#### B.1 — Adapter de Moderación: `LegacyModerationAdapter`
+
+**Problema identificado**
+
+El endpoint `POST /api/posts/:id/comments` necesitaba consultar al sistema de moderación para decidir si un comentario debía bloquearse. Sin embargo, el cliente de moderación disponible (`legacyModerationApi`) es un sistema heredado con una interfaz extremadamente inestable: su único método `review(content)` puede retornar tres tipos de datos completamente distintos según la regla interna que se active:
+
+```
+legacyModerationApi.review(content)
+  → "BLOCK"              (string — contenido prohibido detectado)
+  → "OK"                 (string — contenido aprobado)
+  → 1                    (number — aprobado por regla numérica)
+  → { pass: true, ... }  (object — aprobado por regla de objeto)
+```
+
+Consumir esta API directamente en el controlador obligaba a escribir una cadena de condicionales `if/else` con lógica de parseo dispersa, generando alta complejidad ciclomática y un acoplamiento frágil a los detalles de implementación del sistema externo.
+
+**Solución aplicada**
+
+Se definió la interfaz `ModernModerator` que establece el contrato limpio que el controlador necesita, y se implementó `LegacyModerationAdapter` como la clase adaptadora que traduce las respuestas heterogéneas del sistema legacy a ese contrato.
+
+**Descripción de clases**
+
+- **`ModernModerator` (interfaz — Target):** Define el contrato moderno esperado por el controlador. Expone un único método `isBlocked(content: string): boolean`, semántico y tipo-seguro.
+
+- **`LegacyModerationAdapter` (clase — Adapter):** Implementa `ModernModerator` y encapsula internamente la llamada a `legacyModerationApi`. Normaliza los cuatro posibles tipos de retorno (`string "BLOCK"`, `string "OK"`, `number`, `object`) a un valor booleano unificado. Es inyectable mediante el sistema de DI de NestJS.
+
+- **`legacyModerationApi` (objeto — Adapter):** El sistema heredado con interfaz inestable. No se modifica; el adaptador asume toda la responsabilidad de traducción.
+
+**Resultado en el controlador**
+
+```typescript
+// Antes: 4 condicionales en el controlador
+const result = legacyModerationApi.review(content);
+if (result === 'BLOCK') throw ...
+if (typeof result === 'number' && result < 1) throw ...
+// ...
+
+// Después: una sola línea limpia
+if (this.moderationAdapter.isBlocked(body.content)) {
+    throw new BadRequestException('Comment blocked by moderation');
+}
+```
+
+**Ubicación:** `src/posts/moderation.adapter.ts` · `src/posts/legacy-moderation.client.ts`
+
+---
+
+#### B.2 — Adapter de Notificaciones: `NotificacionesObserverAdapter`
+
+**Problema identificado**
+
+El proyecto contaba con dos sistemas funcionales e independientes que nunca se comunicaban entre sí:
+
+1. **El sistema Observer** (`posts.observer.ts`): emite eventos de interacción a través de la interfaz `InteractionObserver.update(payload: InteractionPayload)`. Su `NotificationObserver` concreto solo ejecutaba un `console.log`, sin enviar notificaciones reales.
+
+2. **El sistema de Notificaciones** (`notificaciones/`): capaz de enviar alertas reales por email y WhatsApp mediante `NotificacionesService.enviarAlerta(tipo, destino, texto)`.
+
+La brecha es estructural: las interfaces son **completamente incompatibles**.
+
+```
+Observer espera:      update(payload: InteractionPayload): void
+                             └─ { type, postId, interactionId, reactionType? }
+
+Notificaciones expone: enviarAlerta(tipo, destino, texto): void
+                                    └─ "email" | "whatsapp", string, string
+```
+
+No existía ningún mecanismo para que un evento del Observer (`"like en post #5"`) se tradujera en una llamada al servicio de notificaciones. Además, `PostsModule` ni siquiera importaba `NotificacionesModule`, lo que dejaba todo el subsistema de alertas desconectado de la lógica de posts.
+
+**Solución aplicada**
+
+Se creó `NotificacionesObserverAdapter`, una clase que actúa como puente entre ambos sistemas sin modificar ninguno de ellos.
+
+**Descripción de clases**
+
+- **`NotificacionesObserverAdapter` (clase — Adapter):** Implementa `InteractionObserver`, por lo que es compatible con el sistema Observer y puede ser adjuntada a `PostSubject`. Internamente recibe `NotificacionesService` mediante inyección de dependencias y traduce cada `InteractionPayload` en una llamada a `enviarAlerta`. Utiliza el ciclo de vida `OnModuleInit` para auto-registrarse como observador en `PostSubject` sin necesidad de modificar el código existente del Observer.
+
+- **`NotificacionesService` (clase existente — Adapter):** El servicio de notificaciones provisto por el módulo de notificaciones. No se modifica. El adapter asume la responsabilidad de mapear entre los dos mundos.
+
+- **`InteractionObserver` (interfaz existente — Target):** El contrato que define el Observer pattern. El adapter lo implementa para ser transparente al sistema Observer.
+
+**Diagrama de clases**
+
+```mermaid
+classDiagram
+    class InteractionObserver {
+        <<interface>>
+        +update(payload: InteractionPayload) void
+    }
+
+    class NotificacionesObserverAdapter {
+        -notificacionesService: NotificacionesService
+        -postSubject: PostSubject
+        +onModuleInit() void
+        +update(payload: InteractionPayload) void
+        -buildMessage(payload: InteractionPayload) string
+    }
+
+    class NotificacionesService {
+        +enviarAlerta(tipo, destino, texto) void
+    }
+
+    class PostSubject {
+        -observers: InteractionObserver[]
+        +attach(observer: InteractionObserver) void
+        +notify(payload: InteractionPayload) void
+    }
+
+    InteractionObserver <|.. NotificacionesObserverAdapter : implementa
+    NotificacionesObserverAdapter --> NotificacionesService : adapta
+    NotificacionesObserverAdapter --> PostSubject : se adjunta a
+    PostSubject o-- InteractionObserver : notifica a
+```
+
+**Diagrama de secuencia**
+
+```mermaid
+sequenceDiagram
+    participant C as PostsController
+    participant S as PostSubject
+    participant A as NotificacionesObserverAdapter
+    participant N as NotificacionesService
+
+    Note over A,S: onModuleInit — auto-registro
+    A->>S: attach(this)
+
+    Note over C,N: Flujo en tiempo de ejecución
+    C->>S: notify({ type: "like", postId: 5, reactionType: "❤️" })
+    S->>A: update(payload)
+    A->>A: buildMessage(payload)
+    A->>N: enviarAlerta("email", "admin@sistema.com", "Reacción ❤️ en publicación #5")
+    N-->>A: void
+```
+
+**Ubicación:** `src/posts/notificaciones-observer.adapter.ts`
+
+---
+
+#### Justificación de Diseño y Arquitectura (Adapter)
+
+- **Principio de Responsabilidad Única (SRP):** Cada adapter tiene una única responsabilidad: traducir entre dos interfaces. Ninguno contiene lógica de negocio ajena a esa traducción.
+
+- **Principio de Abierto/Cerrado (OCP):** `LegacyModerationAdapter` permite cambiar o reemplazar el sistema de moderación legacy sin tocar el controlador. `NotificacionesObserverAdapter` conecta dos sistemas sin modificar ninguno de ellos.
+
+- **Principio de Inversión de Dependencias (DIP):** El controlador depende de `ModernModerator` (abstracción), no de `legacyModerationApi` (implementación concreta). El Observer depende de `InteractionObserver` (abstracción), sin conocer que existe un servicio de notificaciones detrás.
+
+- **Integración no invasiva:** `NotificacionesObserverAdapter` usa `OnModuleInit` para auto-registrarse en `PostSubject`, sin requerir modificaciones al código del Observer pattern. La única intervención en archivos existentes fue agregar las entradas de importación y proveedor en `posts.module.ts`.
 
 ### C. Patrón de Comportamiento: Observer (Observador Clásico)
 
