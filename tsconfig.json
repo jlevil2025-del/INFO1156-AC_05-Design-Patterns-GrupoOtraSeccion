@@ -2,7 +2,9 @@
     "compilerOptions": {
         "module": "commonjs",
         "paths": {
-            "@/*": ["./src/*"]
+            "@/*": [
+                "./src/*"
+            ]
         },
         "declaration": true,
         "removeComments": true,
@@ -10,7 +12,10 @@
         "experimentalDecorators": true,
         "allowSyntheticDefaultImports": true,
         "target": "ES2023",
-        "types": ["node", "jest"],
+        "types": [
+            "node",
+            "jest"
+        ],
         "sourceMap": true,
         "outDir": "./dist",
         "incremental": true,
